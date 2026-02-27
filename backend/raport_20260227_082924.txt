@@ -1,0 +1,232 @@
+Raport bezpieczeństwa Firewall
+Wygenerowano: 2026-02-27 08:29:24
+Liczba analizowanych reguł: 8
+============================================================
+
+
+
+# Raport Audytu Bezpieczeństwa Reguł Firewall Palo Alto Networks
+
+**Data raportu:** 27.02.2026
+**Audytor:** Certyfikowany Inżynier Palo Alto Networks (PCNSE)
+**Zakres:** Analiza bezpieczeństwa reguł firewall — polityka Security Policy
+
+---
+
+## 1. Analiza szczegółowa — zidentyfikowane problemy
+
+---
+
+### PROBLEM #1 — Reguła: `ALLOW ANY ANY`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła zezwala na **cały ruch** z dowolnego źródła do dowolnego celu, dla dowolnej aplikacji i usługi, we wszystkich strefach. Jest to de facto wyłączenie firewalla — neguje wszelkie mechanizmy kontroli dostępu. Każdy ruch, w tym złośliwy, jest przepuszczany bez żadnej inspekcji kontekstowej. |
+| **Poziom ryzyka** | 🔴 **KRYTYCZNY** |
+| **Rekomendacja** | **Natychmiast usunąć lub wyłączyć tę regułę.** Żadna polityka bezpieczeństwa nie powinna zawierać reguły „allow any any" na poziomie produkcyjnym. Jeśli reguła pełniła rolę tymczasową (np. podczas migracji), powinna zostać zastąpiona zestawem precyzyjnych reguł opartych na zasadzie najmniejszych uprawnień (least privilege). Należy zidentyfikować rzeczywiste przepływy ruchu (np. za pomocą Traffic Log, App-ID, lub narzędzia Policy Optimizer) i stworzyć dedykowane reguły dla każdego uzasadnionego przepływu. |
+
+**Dodatkowe naruszenia w tej regule:**
+- Source: `any` ⚠️
+- Destination: `any` ⚠️
+- Application: `any` ⚠️
+- Service: `any` ⚠️
+- From/To zone: `any` ⚠️
+- Brak informacji o włączonym logowaniu ⚠️
+
+---
+
+### PROBLEM #2 — Reguła: `ALLOW ANY ANY-1`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła zezwala na cały ruch ze strefy `MGMT` do strefy `VPN` bez ograniczenia źródła, celu, aplikacji ani usługi. Strefa zarządzania (MGMT) powinna mieć **najsurowsze** ograniczenia wyjściowe, ponieważ kompromitacja urządzeń zarządzających daje atakującemu pełną kontrolę nad infrastrukturą. Nieograniczony dostęp do strefy VPN umożliwia potencjalną eskalację ataku na zdalne lokalizacje. Nazwa reguły (`ANY ANY-1`) sugeruje, że jest to kopia lub wariant reguły #1 — automatycznie wygenerowana, nie skonfigurowana świadomie. |
+| **Poziom ryzyka** | 🔴 **KRYTYCZNY** |
+| **Rekomendacja** | Ograniczyć regułę do **konkretnych adresów źródłowych** (np. stacje administracyjne), **konkretnych adresów docelowych** (np. serwery VPN), **określonych aplikacji** (np. `ipsec`, `ssl-vpn`, `ssh`) oraz **konkretnych portów usługowych**. Zmienić nazwę na opisową (np. „MGMT-to-VPN-Admin-Access"). Włączyć logowanie na poziomie sesji (Log at Session End). |
+
+**Naruszenia:**
+- Source: `any` ⚠️
+- Destination: `any` ⚠️
+- Application: `any` ⚠️
+- Service: `any` ⚠️
+- Brak informacji o logowaniu ⚠️
+
+---
+
+### PROBLEM #3 — Reguła: `VPN ACCESS`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła zezwala na **nieograniczony ruch wewnątrz strefy VPN** (intra-zone) — dowolne źródło, cel, aplikacja i usługa. Użytkownicy VPN po nawiązaniu połączenia mają pełny, niekontrolowany dostęp do wszystkich zasobów w tej strefie. W przypadku kompromitacji jednego klienta VPN (np. ransomware, credential theft), atakujący uzyskuje swobodny lateral movement w obrębie całej strefy VPN. Brak segmentacji wewnątrz strefy VPN narusza zasadę Zero Trust. |
+| **Poziom ryzyka** | 🔴 **KRYTYCZNY** |
+| **Rekomendacja** | Wdrożyć **mikrosegmentację ruchu VPN**. Zdefiniować grupy użytkowników VPN (User-ID / Group Mapping) i przypisać im dostęp wyłącznie do niezbędnych zasobów. Zastąpić tę regułę zestawem reguł per-grupa/per-aplikacja. Przykład: użytkownicy helpdesk → dostęp tylko do systemu ticketowego po HTTPS; administratorzy → dostęp SSH/RDP do wybranych serwerów. Włączyć logowanie, inspekcję SSL i profile Threat Prevention. |
+
+**Naruszenia:**
+- Source: `any` ⚠️
+- Destination: `any` ⚠️
+- Application: `any` ⚠️
+- Service: `any` ⚠️
+- Brak informacji o logowaniu ⚠️
+
+---
+
+### PROBLEM #4 — Reguła: `MONITOROWANIE to ANY`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła jest poprawnie skonstruowana — określone źródła (systemy Riverbed), określone cele (serwery DNS), konkretne aplikacje (SNMP v2/v3) i application-default service. **Jednakże**: (1) Protokół **SNMPv2** jest obecny na liście aplikacji — SNMPv2 przesyła community strings w postaci jawnego tekstu, co stwarza ryzyko podsłuchu i nieautoryzowanego odpytywania urządzeń. (2) Nazwa reguły („to ANY") jest **myląca** — destination nie jest „any", lecz dwa konkretne serwery DNS. Nieprawidłowa nazwa utrudnia audyt i administrację. (3) SNMP do serwerów DNS — należy zweryfikować, czy serwery DNS rzeczywiście wymagają monitorowania SNMP z systemów Riverbed. |
+| **Poziom ryzyka** | 🟡 **ŚREDNI** |
+| **Rekomendacja** | (1) **Usunąć `snmpv2` i `snmp-base`** z listy dozwolonych aplikacji — pozostawić wyłącznie `snmpv3`, które zapewnia szyfrowanie i uwierzytelnianie. (2) Zmienić nazwę reguły na opisową, np. „RIVERBED-to-DNS-SNMP-Monitoring". (3) Zweryfikować zasadność biznesową tego przepływu. (4) Włączyć logowanie. |
+
+---
+
+### PROBLEM #5 — Reguła: `ANY to MONITOROWANIE`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Source ustawione na `any` — oznacza, że **każdy host** w strefach `APP_ZONE` i `MGMT_ZONE` może wysyłać dane NetFlow do systemów Riverbed. Powinny to robić wyłącznie urządzenia sieciowe (routery, switche, firewalle) skonfigurowane jako eksportery NetFlow. Ustawienie source na „any" niepotrzebnie poszerza powierzchnię ataku — złośliwy host mógłby wysyłać sfałszowane dane NetFlow, zatruwając dane monitoringowe lub wykorzystując to jako kanał exfiltracji danych. |
+| **Poziom ryzyka** | 🟡 **ŚREDNI** |
+| **Rekomendacja** | Zastąpić `source: any` **jawną listą eksporterów NetFlow** (adresy IP routerów, switchy i firewalli, które rzeczywiście wysyłają NetFlow). Utworzyć obiekt adresowy (Address Group) np. „NETFLOW_EXPORTERS" i użyć go jako source. Włączyć logowanie. |
+
+---
+
+### PROBLEM #6 — Reguła: `EDGE to EDGE`
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła zawiera kilka nieprawidłowości: (1) **From/To zone ustawione na `any`** — zamiast określenia konkretnych stref, w których znajdują się hosty Edge, użyto wartości `any`, co osłabia model bezpieczeństwa strefowego. (2) **Application: `any`** — dwa serwery Edge mogą komunikować się za pomocą dowolnego protokołu, co jest nadmiarowe. (3) **Użycie surowych adresów IP** zamiast obiektów adresowych (Address Objects) — utrudnia zarządzanie i audyt. (4) Nazwa reguły zawiera podwójną spację — wskazuje na niedbalstwo konfiguracyjne. |
+| **Poziom ryzyka** | 🟠 **WYSOKI** |
+| **Rekomendacja** | (1) Określić **konkretne strefy** from/to zamiast `any`. (2) Zidentyfikować protokoły używane przez Edge (np. jeśli to Microsoft Edge Servers / Session Border Controllers — `sip`, `tls`, `stun`) i ograniczyć application do wymaganego minimum. (3) Utworzyć obiekty adresowe: `EDGE-SERVER-1 (192.168.104.5)` i `EDGE-SERVER-2 (192.168.204.5)`. (4) Włączyć logowanie. (5) Poprawić nazwę reguły. |
+
+---
+
+### PROBLEM #7 — Brak reguły DENY ALL (Implicit/Explicit) na końcu
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | W analizowanym zestawie reguł **brak jawnej reguły deny-all** na końcu polityki. Chociaż Palo Alto Networks posiada domyślną regułę implicit deny (interzone-default), to: (1) Domyślna reguła **nie loguje** odrzuconego ruchu (domyślnie logowanie wyłączone), co uniemożliwia wykrywanie prób nieautoryzowanego dostępu i rekonesansu. (2) **Reguła #1 (`ALLOW ANY ANY`)** i tak przechwytuje cały ruch przed dotarciem do implicit deny — co czyni domyślną regułę bezużyteczną. (3) Brak jawnej reguły deny utrudnia audyt i stanowi naruszenie najlepszych praktyk Palo Alto Networks. |
+| **Poziom ryzyka** | 🟠 **WYSOKI** |
+| **Rekomendacja** | Dodać na końcu polityki **jawną regułę deny-all z włączonym logowaniem**: Nazwa: `DENY-ALL-LOG`, From: `any`, To: `any`, Source: `any`, Destination: `any`, Application: `any`, Service: `any`, Action: **deny**, Log: **Log at Session End — enabled**. Skonfigurować log forwarding do systemu SIEM w celu monitorowania prób nieautoryzowanego dostępu. |
+
+---
+
+### PROBLEM #8 — Shadowing (przesłanianie reguł)
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła #1 (`ALLOW ANY ANY`) znajduje się **na pierwszej pozycji** i ma parametry all-any z akcją allow. Oznacza to, że **wszystkie pozostałe reguły (2–8) są całkowicie przesłonięte (shadowed)** — nigdy nie zostaną dopasowane do żadnego ruchu, ponieważ reguła #1 dopasuje się do każdego pakietu jako pierwsza. W praktyce: reguła `MONITOROWANIE to ANY` z ograniczeniami SNMP jest bezużyteczna — nawet bez niej ten ruch i tak by przeszedł. Reguła `REPOZYTORIUM C2ISSC` z ograniczeniem do SSL — bezużyteczna. Wszelkie ograniczenia w regułach 2–8 istnieją tylko „na papierze". |
+| **Poziom ryzyka** | 🔴 **KRYTYCZNY** |
+| **Rekomendacja** | (1) **Natychmiast usunąć lub wyłączyć regułę `ALLOW ANY ANY`**. (2) Po jej usunięciu zweryfikować, czy reguły 2–8 obsługują wszystkie wymagane przepływy ruchu. (3) Użyć narzędzia **Policy Optimizer** w PAN-OS do identyfikacji unused rules i reguł z nadmiarowymi uprawnieniami. (4) Przeprowadzić testy po zmianach w oknie serwisowym. |
+
+---
+
+### PROBLEM #9 — Brak logowania we wszystkich regułach
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | W żadnej z analizowanych reguł **nie stwierdzono konfiguracji logowania** (Log at Session Start / Log at Session End / Log Forwarding Profile). Brak logów uniemożliwia: wykrywanie incydentów bezpieczeństwa, analizę forensic po włamaniu, monitorowanie zgodności z polityką bezpieczeństwa, działanie systemów SIEM/SOC, rozliczalność dostępu (accountability). Jest to **poważne naruszenie** wymagań audytowych i standardów takich jak ISO 27001, PCI DSS, NIS2. |
+| **Poziom ryzyka** | 🟠 **WYSOKI** |
+| **Rekomendacja** | Dla **każdej reguły** włączyć **Log at Session End** (minimum). Dla reguł krytycznych (dostęp administracyjny, dostęp z/do Internetu) włączyć dodatkowo **Log at Session Start**. Skonfigurować **Log Forwarding Profile** kierujący logi do centralnego systemu SIEM. Upewnić się, że logi zawierają: App-ID, User-ID, źródło, cel, port, akcję, threat logs. |
+
+---
+
+### PROBLEM #10 — Brak profili bezpieczeństwa (Security Profiles)
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | W żadnej z reguł z akcją `allow` nie stwierdzono zastosowania **profili bezpieczeństwa** (Security Profile Group): Antivirus, Anti-Spyware, Vulnerability Protection, URL Filtering, WildFire Analysis, File Blocking. Ruch jest przepuszczany bez inspekcji pod kątem złośliwego oprogramowania, exploitów, C2 communication, czy pobierania niebezpiecznych plików. Nawet dobrze skonstruowane reguły (np. `REPOZYTORIUM C2ISSC`, `NEXPOSE CONSOLE TO ENGINE`) nie korzystają z zaawansowanych możliwości ochrony PAN-OS. |
+| **Poziom ryzyka** | 🟠 **WYSOKI** |
+| **Rekomendacja** | Utworzyć **Security Profile Group** (np. „Standard-Protection") zawierającą: Antivirus (default lub strict), Anti-Spyware (default lub strict), Vulnerability Protection (strict), URL Filtering (z blokadą kategorii high-risk), WildFire Analysis (enabled), File Blocking (blokada niebezpiecznych typów: PE, EXE, DLL, BAT, PS1). Przypisać tę grupę do **każdej reguły allow**. Dla ruchu SSL — włączyć **SSL Decryption** (Forward Proxy / Inbound Inspection) aby umożliwić inspekcję zaszyfrowanego ruchu. |
+
+---
+
+### PROBLEM #11 — Użycie niezaszyfrowanych protokołów SNMP
+
+| Parametr | Wartość |
+|---|---|
+| **Opis problemu** | Reguła `MONITOROWANIE to ANY` dopuszcza aplikacje `snmp`, `snmp-base` oraz `snmpv2`, które przesyłają dane (w tym community strings pełniące rolę hasła) **w postaci niezaszyfrowanej**. W przypadku przechwycenia ruchu sieciowego (np. ARP spoofing, mirror port, kompromitacja segmentu sieci), atakujący może: odczytać community strings, odpytywać urządzenia sieciowe o konfigurację, w przypadku community z uprawnieniami write — modyfikować konfigurację urządzeń. |
+| **Poziom ryzyka** | 🟡 **ŚREDNI** |
+| **Rekomendacja** | Migracja na **wyłącznie SNMPv3** z Authentication (SHA) i Privacy (AES-128/256). Usunięcie `snmp`, `snmp-base`, `snmpv2` z reguły. Rekonfiguracja systemów Riverbed i serwerów DNS na obsługę SNMPv3. |
+
+---
+
+## 2. Macierz problemów — widok zbiorczy
+
+| # | Reguła | Problem | Ryzyko |
+|---|---|---|---|
+| 1 | ALLOW ANY ANY | Pełne otwarcie firewalla — allow any/any/any | 🔴 KRYTYCZNY |
+| 2 | ALLOW ANY ANY-1 | Nieograniczony dostęp MGMT→VPN | 🔴 KRYTYCZNY |
+| 3 | VPN ACCESS | Nieograniczony ruch intra-zone VPN | 🔴 KRYTYCZNY |
+| 4 | ALLOW ANY ANY (poz. #1) | Shadowing — przesłonięcie wszystkich pozostałych reguł | 🔴 KRYTYCZNY |
+| 5 | *(wszystkie)* | Brak jawnej reguły DENY ALL z logowaniem | 🟠 WYSOKI |
+| 6 | EDGE to EDGE | Zone `any`, application `any`, surowe IP | 🟠 WYSOKI |
+| 7 | *(wszystkie)* | Brak logowania (Log at Session End) | 🟠 WYSOKI |
+| 8 | *(wszystkie allow)* | Brak Security Profiles (AV, AS, VP, WF) | 🟠 WYSOKI |
+| 9 | MONITOROWANIE to ANY | Niebezpieczne protokoły SNMPv1/v2 | 🟡 ŚREDNI |
+| 10 | ANY to MONITOROWANIE | Source `any` zamiast listy eksporterów | 🟡 ŚREDNI |
+| 11 | MONITOROWANIE to ANY | Myląca nazwa reguły | 🟡 ŚREDNI |
+
+---
+
+## 3. Podsumowanie
+
+### Statystyka problemów według poziomu ryzyka
+
+| Poziom ryzyka | Liczba problemów | Udział |
+|---|---|---|
+| 🔴 **KRYTYCZNY** | **4** | 36% |
+| 🟠 **WYSOKI** | **4** | 36% |
+| 🟡 **ŚREDNI** | **3** | 28% |
+| 🟢 NISKI | 0 | 0% |
+| **RAZEM** | **11** | **100%** |
+
+### Ocena ogólna
+
+> **Stan bezpieczeństwa: ⛔ KRYTYCZNIE NIEWYSTARCZAJĄCY**
+>
+> Analizowany zestaw reguł firewall zawiera fundamentalne błędy konfiguracyjne, które de facto **neutralizują ochronę firewalla**. Reguła `ALLOW ANY ANY` na pierwszej pozycji powoduje, że urządzenie Palo Alto Networks działa jak router — przepuszcza cały ruch bez jakiejkolwiek kontroli. Wszystkie pozostałe reguły są przesłonięte i nie pełnią żadnej funkcji ochronnej. Brak logowania uniemożliwia wykrycie trwających ataków lub przeprowadzenie analizy powłamaniowej.
+
+---
+
+### 🚨 TOP 3 — Działania do natychmiastowego podjęcia
+
+#### 🥇 PRIORYTET 1 — Usunięcie reguły `ALLOW ANY ANY` (NATYCHMIAST)
+
+**Uzasadnienie:** Ta reguła anuluje działanie firewalla i przesłania wszystkie inne reguły. Dopóki istnieje, żadna inna zmiana nie ma sensu.
+
+**Kroki:**
+1. Uruchomić **Policy Optimizer** → zidentyfikować rzeczywiste przepływy ruchu dopasowane do tej reguły
+2. Na podstawie logów stworzyć dedykowane reguły dla każdego uzasadnionego przepływu
+3. Wyłączyć (disable) regułę `ALLOW ANY ANY` w oknie serwisowym
+4. Monitorować logi przez 24–48h pod kątem blokowanego ruchu
+5. Po potwierdzeniu braku wpływu na produkcję — **usunąć** regułę
+
+---
+
+#### 🥈 PRIORYTET 2 — Włączenie logowania i dodanie reguły DENY ALL (W CIĄGU 24H)
+
+**Uzasadnienie:** Bez logów organizacja jest „ślepa" — nie widzi co przechodzi przez firewall, nie może wykryć ataku ani spełnić wymagań compliance.
+
+**Kroki:**
+1. Utworzyć **Log Forwarding Profile** wskazujący na SIEM
+2. Dla **każdej istniejącej reguły** włączyć Log at Session End + przypisać Log Forwarding Profile
+3. Dodać na końcu polityki jawną regułę: `DENY-ALL-LOG` (deny, any→any, log enabled)
+4. Zweryfikować odbiór logów w systemie SIEM
+
+---
+
+#### 🥉 PRIORYTET 3 — Ograniczenie reguł `ALLOW ANY ANY-1`, `VPN ACCESS`, `EDGE to EDGE` (W CIĄGU 7 DNI)
+
+**Uzasadnienie:** Po usunięciu reguły #1 te reguły staną się „aktywne" — ale nadal zawierają nadmiarowe uprawnienia (any source, any application), które umożliwiają lateral movement.
+
+**Kroki:**
+1. Dla każdej z tych reguł zidentyfikować wymagane przepływy (source IP, dest IP, application, port)
+2. Zastąpić `any` konkretnymi wartościami
+3. Przypisać **Security Profile Group** do każdej reguły allow
+4. Określić strefy (from/to) dla reguły `EDGE to EDGE`
+5. Przeprowadzić testy funkcjonalne po zmianach
+
+---
+
+*Raport sporządził: Certyfikowany Inżynier Palo Alto Networks (PCNSE)*
+*Data: 27.02.2026*
+*Klasyfikacja: POUFNE — do użytku wewnętrznego*
